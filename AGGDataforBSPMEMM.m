@@ -40,20 +40,19 @@ Contexts = ["UR", "LF", "AF"];
 
 for C = 1:length(Contexts) 
     USVFolder = fullfile(USVFolderLocation, Contexts(C));
-    filestoOpen = dir(USVFolder);
+    cd(USVFolder);
+    filestoOpen = dir('*.xlsx');
     %first two rows of directory struct are non important
     %see https://stackoverflow.com/questions/27337514/matlab-dir-without-and
-    filestoOpen([1 2],:) = []; 
     numFiles = length(filestoOpen);
     animalID = 1;
     
     for F = 1:length(filestoOpen)
-        if contains(filestoOpen(F).name,'DS_Store') || ...
-                contains(filestoOpen(F).name,'$')
+        if contains(filestoOpen(F).name,'$')
             continue
-            %for some reason sometimes invisible files of .DS_Store and
-            %others starting with $ (which are temp files) are written
-            %this lets the script ignore these files
+%             %for some reason sometimes invisible files that 
+%             %start with $ (which are temp files) are written
+%             %this lets the script ignore these files
         end
         disp(['Processing: ' filestoOpen(F).name])
         filetoRead = fullfile(filestoOpen(F).folder, filestoOpen(F).name);
@@ -67,7 +66,7 @@ for C = 1:length(Contexts)
         
         %For some reason this script crashes when there's only one USV
         %One USV can't be used for BSPMEMM anyway
-        if len<2
+        if len < 3 %assuming minimum of one USV for three recordings 
             disp(['Skipped: ' filestoOpen(F).name])
             continue
         end
@@ -84,7 +83,6 @@ for C = 1:length(Contexts)
                 markovNNS(n) = animalID;
             end
         end
-        animalID = animalID+1; %This ensures the next file starts at a new value
         clear n 
 
         NaNloci = zeros(len, 1);
@@ -157,21 +155,25 @@ for C = 1:length(Contexts)
         recstartsites = find(finalNNS(:,4));
 
 
-        for p = 2:setdiff(length(finalNNS), recstartsites)
+        for p = 2:length(finalNNS)
             if any(p == recstartsites)
                 continue
             end
                 finalNNS(p,4) = finalNNS(p-1,5);
         end
-
-        ranges = [1 2 3; 4 5 6; 7 8 9; 10 11 12; 13 14 15; 16 17 18;...
-            19 20 21; 22 23 24; 25 26 27; 28 29 30; 31 32 33;];
-
+        
+        IDranges = zeros(1000,3);
+        IDranges(1,1) = 1; IDranges(1,2) = 2; IDranges(1,3) =3;
+        for l = 2:length(IDranges)
+            IDranges(l,1) = IDranges(l-1,1) + 3;
+            IDranges(l,2) = IDranges(l-1,2) + 3;
+            IDranges(l,3) = IDranges(l-1,3) + 3;
+        end
 
         %Reassign animalID numbers so that three trials match one animal
-        for IDrange = 1:length(ranges)
+        for IDrange = 1:length(IDranges)
             for a = 1:length(finalNNS)
-                if any(finalNNS(a) == ranges(IDrange,1:3))
+                if any(finalNNS(a) == IDranges(IDrange,1:3))
                     finalNNS(a,1) = IDrange;
                 end
             end
@@ -199,7 +201,9 @@ for C = 1:length(Contexts)
         savefileName = extractBefore(filestoOpen(F).name, ".");
         csvwrite(strjoin({filestoOpen(F).folder, '/', savefileName, ...
             '.csv'}, ''), finalNNS); 
-        clear p q a f z 
+        clear p q a f z w l
+        
+        animalID = animalID+1; %This ensures the next file starts at a new value
     end
 end
 fprintf('Thanks for waiting! \n ')
@@ -207,5 +211,4 @@ CreateStruct.Interpreter = 'tex';
 CreateStruct.WindowStyle = 'modal';
 uiwait(msgbox({'\fontsize{20} All done!'; ...
     '\fontsize{30} <(^\wedge.^\wedge<) ';},'Success',CreateStruct));
-
 
