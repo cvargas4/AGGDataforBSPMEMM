@@ -33,20 +33,28 @@
 %    Application to Vocalization Syntax
 %  Sarkar et al., 2018, Journal of the American Statistical Association 
 %  https://amstat.tandfonline.com/doi/full/10.1080/01621459.2018.1423986?scroll=top&needAccess=true#.XXVpkpNKhE4
+% 
+% Lines 97-143 were written for the cases used here which required renaming 
+% errouneously labled data sets. Our data sets were also labeled by week
+% of experiment (e.g. week 1, week2, etc.). 
+% This section of the code needs to be rewritten or changed for individual use cases
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 USVFolderLocation = '/Users/cesarvargas/Desktop/MouseExperiments/VocalRecordings/Yoko/2019.Feb_Nova1pm_usv';
 Contexts = ["UR", "LF", "AF"];
 
-for C = 1:length(Contexts) 
+tic
+for C = 1%1:length(Contexts) 
     USVFolder = fullfile(USVFolderLocation, Contexts(C));
     cd(USVFolder);
     filestoOpen = dir('*.xlsx');
     %first two rows of directory struct are non important
     %see https://stackoverflow.com/questions/27337514/matlab-dir-without-and
     numFiles = length(filestoOpen);
-    animalID = 1;
     
+    animalID = 1;
+    gtype = extractBetween(filestoOpen(1).name, '_', '_');
     for F = 1:length(filestoOpen)
         if contains(filestoOpen(F).name,'$')
             continue
@@ -56,7 +64,7 @@ for C = 1:length(Contexts)
         end
         disp(['Processing: ' filestoOpen(F).name])
         filetoRead = fullfile(filestoOpen(F).folder, filestoOpen(F).name);
-        [syldata, namesNsyllables, raw] = xlsread(filetoRead, 3);
+        [syldata, namesNsyllables, raw] = xlsread(filetoRead, 4, 'A1:N50000');
 
         namesNsyllables(1,:) = [];
         [len, wide] = size(namesNsyllables);
@@ -64,6 +72,9 @@ for C = 1:length(Contexts)
         %removes top row of variable names
         [~, names, ~] = xlsread(filetoRead, 4, 'AF7:AF50');
         
+        if mod(length(names),3) ~= 0
+            warning(['Not all mice have three recs: ', filestoOpen(F).name]);
+        end
         %For some reason this script crashes when there's only one USV
         %One USV can't be used for BSPMEMM anyway
         if len < 3 %assuming minimum of one USV for three recordings 
@@ -74,16 +85,7 @@ for C = 1:length(Contexts)
         markovNNS = zeros(size(namesNsyllables));
         %NNS refers to names and syllables (namesNsyllables)
         currentMouse = namesNsyllables(1);
-        markovNNS(1,1) = animalID;
-        for n = 2:len
-            if strcmp(namesNsyllables(n), namesNsyllables(n-1))
-                markovNNS(n) = animalID;
-            else 
-                animalID = animalID+1;
-                markovNNS(n) = animalID;
-            end
-        end
-        clear n 
+        
 
         NaNloci = zeros(len, 1);
         for i = 1:len
@@ -96,6 +98,54 @@ for C = 1:length(Contexts)
         clear i ans A
 
 
+        for i = 1:length(namesNsyllables)
+            if contains(namesNsyllables{i,1},'Plexin') == 1   
+                namesNsyllables{i,1} = 'week1_';
+            end   
+        end
+        clear i
+        
+        for i = 1:length(names)
+            if contains(names{i,1},'Plexin') == 1   
+                names{i,1} = 'week1_';
+            end   
+        end
+        clear i
+        
+        markovNNS = zeros(size(namesNsyllables));
+        for n = 1:length(namesNsyllables)
+            markovNNS(n,1) = ...
+                str2double(extractBetween(namesNsyllables{n,1}, "k", "_"));
+        end
+        clear n
+        
+        if strcmp(gtype, extractBetween(filestoOpen(F).name, '_', '_')) == 0 
+            gtype = extractBetween(filestoOpen(F).name, '_', '_');
+            animalID = 1;
+        end
+        
+        for r = 1:(length(markovNNS)-1)
+            if (markovNNS(r,1) - markovNNS(r+1)) <= 0
+                markovNNS(r,1) = animalID;
+            elseif (markovNNS(r,1) - markovNNS(r+1)) >= 0 && ...
+                    strcmp(namesNsyllables(r,1),namesNsyllables(r+1,1)) == 0
+                markovNNS(r,1) = animalID;
+                animalID = animalID+1;
+            end
+        end
+        
+        
+        for r = length(markovNNS)
+            if (markovNNS(r,1) > markovNNS(r-1) || markovNNS(r,1) < markovNNS(r-1)) && ...
+                    strcmp(namesNsyllables(r,1),namesNsyllables(r-1,1)) == 0
+                markovNNS(r,1) = animalID;
+                
+            else
+                markovNNS(r,1) = markovNNS(r-1,1);
+            end
+        end
+        animalID = animalID+1; %This ensures the next file starts at a new value
+        
         % [d,m,s,u,x]=[1,2,3,4,5]
         for s = 1:len
             if strcmp(namesNsyllables(s,2), 'd')
@@ -144,7 +194,7 @@ for C = 1:length(Contexts)
             finalNNS(f,5) = NNSwX(f,2);
         end
 
-        whichrec = 1;
+        whichrec = finalNNS(1,1);
         finalNNS(1,4) = finalNNS(1,5);
         for q = 1:length(NNSwX)
             if finalNNS(q,1) ~= whichrec
@@ -154,38 +204,31 @@ for C = 1:length(Contexts)
         end
         recstartsites = find(finalNNS(:,4));
 
-
-        for p = 2:length(finalNNS)
+        linesskipped = zeros(size(recstartsites));
+        linesskipped(1,1) = 1;
+        blabla = 1;
+        for p = 1:length(finalNNS)
             if any(p == recstartsites)
+                linesskipped(blabla,1) = p;
+                blabla = blabla + 1;
                 continue
             end
                 finalNNS(p,4) = finalNNS(p-1,5);
         end
+        if isequal(linesskipped, recstartsites) == 0
+            warning(['Some start sites were ignored for file: ', filestoOpen(F).name]);
+        elseif isequal(finalNNS(:,4), finalNNS(:,5))
+            warning(['yt-1 and y are the same in ', filestoOpen(F).name]);
+        end
         
-        IDranges = zeros(1000,3);
-        IDranges(1,1) = 1; IDranges(1,2) = 2; IDranges(1,3) =3;
-        for l = 2:length(IDranges)
-            IDranges(l,1) = IDranges(l-1,1) + 3;
-            IDranges(l,2) = IDranges(l-1,2) + 3;
-            IDranges(l,3) = IDranges(l-1,3) + 3;
-        end
-
-        %Reassign animalID numbers so that three trials match one animal
-        for IDrange = 1:length(IDranges)
-            for a = 1:length(finalNNS)
-                if any(finalNNS(a) == IDranges(IDrange,1:3))
-                    finalNNS(a,1) = IDrange;
-                end
-            end
-        end
 
         %fill genotype and context
-        genotype = extractBetween(filestoOpen(F).name, "_", "_");
-        if strcmp(genotype, 'het')
+        gtype = extractBetween(filestoOpen(F).name, '_', '_');
+        if strcmp(gtype, 'het')
             finalNNS(:,2) = 1;
-        elseif strcmp(genotype, 'pm')
+        elseif strcmp(gtype, 'pm')
             finalNNS(:,2) = 2;
-        elseif strcmp(genotype, 'wt')
+        elseif strcmp(gtype, 'wt')
             finalNNS(:,2) = 3;
         end
         
@@ -200,15 +243,15 @@ for C = 1:length(Contexts)
         
         savefileName = extractBefore(filestoOpen(F).name, ".");
         csvwrite(strjoin({filestoOpen(F).folder, '/', savefileName, ...
-            '.csv'}, ''), finalNNS); 
+            '__renum.csv'}, ''), finalNNS); 
         clear p q a f z w l
+        disp(strjoin({'Saved: ', savefileName,'__renum.csv'}, ''))
         
-        animalID = animalID+1; %This ensures the next file starts at a new value
     end
 end
-fprintf('Thanks for waiting! \n ')
+toc
+fprintf('\n Thanks for waiting! \n ')
 CreateStruct.Interpreter = 'tex';
 CreateStruct.WindowStyle = 'modal';
 uiwait(msgbox({'\fontsize{20} All done!'; ...
     '\fontsize{30} <(^\wedge.^\wedge<) ';},'Success',CreateStruct));
-
